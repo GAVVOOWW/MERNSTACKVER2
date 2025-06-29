@@ -479,8 +479,8 @@ app.post("/api/create-checkout-session", authenticateToken, async (req, res) => 
                 attributes: {
                     line_items,
                     payment_method_types: ["gcash", "card"],
-                    success_url: `${process.env.FRONTEND_URL}/checkout/success`,
-                    cancel_url: `${process.env.FRONTEND_URL}/checkout/cancel`, // Corrected typo
+                    success_url: `${process.env.FRONTEND_URL}checkout/success`,
+                    cancel_url: `${process.env.FRONTEND_URL}checkout/cancel`, // Corrected typo
                     send_email_receipt: true,
                     show_line_items: true,
                     // The API expects the total amount to be here as well for some validations
