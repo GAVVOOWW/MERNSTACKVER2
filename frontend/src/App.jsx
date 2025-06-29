@@ -27,8 +27,8 @@ const App = () => {
         <Route path="/item/:id" element={<ProtectedRoute><SingleItemPage /></ProtectedRoute>} />
         <Route path="/cart" element={<ProtectedRoute><Home /></ProtectedRoute>} />
         <Route path="/checkout" element={<ProtectedRoute><CheckoutPage /></ProtectedRoute>} />
-        <Route path="/checkout/success" element={<ProtectedRoute><SuccessPage /></ProtectedRoute>} />
-        <Route path="/checkout/cancel" element={<ProtectedRoute><CancelPage /></ProtectedRoute>} />
+        <Route path="checkout/success" element={<ProtectedRoute><SuccessPage /></ProtectedRoute>} />
+        <Route path="checkout/cancel" element={<ProtectedRoute><CancelPage /></ProtectedRoute>} />
         <Route path="/orders" element={<ProtectedRoute><OrderHistory /></ProtectedRoute>} />
         <Route path="/orders/:id" element={<ProtectedRoute><OrderDetail /></ProtectedRoute>} />
         <Route path="/admin" element={<ProtectedRoute><AdminPage /></ProtectedRoute>} />
