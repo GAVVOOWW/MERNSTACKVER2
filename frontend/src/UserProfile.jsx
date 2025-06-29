@@ -18,7 +18,8 @@ import {
   InputGroup,
   Modal,
   Breadcrumb,
-  Navbar
+  Navbar,
+  Pagination
 } from "react-bootstrap"
 import {
   BsGeoAlt,
@@ -103,6 +104,10 @@ const UserProfile = () => {
 
   // Active tab state
   const [activeTab, setActiveTab] = useState("profile")
+
+  // Pagination state for orders
+  const [currentPage, setCurrentPage] = useState(1)
+  const [ordersPerPage] = useState(5)
 
   // Additional state variables
   const [search, setSearch] = useState("")
@@ -295,10 +300,17 @@ const UserProfile = () => {
     )
   }
 
+  // Pagination logic for orders
+  const indexOfLastOrder = currentPage * ordersPerPage
+  const indexOfFirstOrder = indexOfLastOrder - ordersPerPage
+  const currentOrders = orders.slice(indexOfFirstOrder, indexOfLastOrder)
+  const totalPages = Math.ceil(orders.length / ordersPerPage)
+
+  const paginate = (pageNumber) => setCurrentPage(pageNumber)
+
   const stats = getOrderStats()
 
   return (
-
     <>
       {/* Navigation Bar */}
       <Navbar bg="white" variant="light" expand="lg" sticky="top" className="py-3 border-bottom shadow-sm">
@@ -371,10 +383,6 @@ const UserProfile = () => {
       </Navbar>
 
       <Container className="my-4">
-
-
-
-
         {/* Profile Header */}
         <Card className="border-0 shadow-sm mb-4">
           <Card.Body className="p-4">
@@ -881,7 +889,7 @@ const UserProfile = () => {
                               </tr>
                             </thead>
                             <tbody>
-                              {orders.map((order) => (
+                              {currentOrders.map((order) => (
                                 <tr key={order._id} className="border-bottom">
                                   <td className="px-4 py-3">
                                     <div>
@@ -931,6 +939,31 @@ const UserProfile = () => {
                           </Table>
                         </div>
                       </Card.Body>
+                      {totalPages > 1 && (
+                        <Card.Footer className="bg-white d-flex justify-content-center">
+                          <Pagination>
+                            <Pagination.First onClick={() => paginate(1)} disabled={currentPage === 1} />
+                            <Pagination.Prev onClick={() => paginate(currentPage - 1)} disabled={currentPage === 1} />
+                            {[...Array(totalPages).keys()].map((number) => (
+                              <Pagination.Item
+                                key={number + 1}
+                                active={number + 1 === currentPage}
+                                onClick={() => paginate(number + 1)}
+                              >
+                                {number + 1}
+                              </Pagination.Item>
+                            ))}
+                            <Pagination.Next
+                              onClick={() => paginate(currentPage + 1)}
+                              disabled={currentPage === totalPages}
+                            />
+                            <Pagination.Last
+                              onClick={() => paginate(totalPages)}
+                              disabled={currentPage === totalPages}
+                            />
+                          </Pagination>
+                        </Card.Footer>
+                      )}
                     </Card>
                   )}
                 </Tab.Pane>
