@@ -59,7 +59,13 @@ const frontendURL = process.env.FRONTEND_URL;
 
 const io = new Server(server, {
     cors: {
-        origin: process.env.FRONTEND_URL || "http://localhost:5173",
+        origin: [
+            "http://localhost:5173", // Local dev environment
+            "https://wawa-furniture-shop.onrender.com",
+            /https:\/\/merntacktechgurus-1\.onrender\.com$/, // Your specific Render frontend URL
+            /https:\/\/.*\.onrender\.com$/, // Any other Render frontend subdomains
+            process.env.FRONTEND_URL, // Any custom frontend URL from .env
+        ].filter(Boolean), // Filters out undefined/null values
         methods: ["GET", "POST"],
         credentials: true
     }
@@ -119,6 +125,7 @@ cloudinary.config({
 
 const allowedOrigins = [
     `https://merntacktechgurus-1.onrender.com`,
+    `https://wawa-furniture-shop.onrender.com`,
     process.env.FRONTEND_URL, // Your live site on Render
     'http://localhost:5173',  // Your local development environment
 ];
@@ -474,13 +481,15 @@ app.post("/api/create-checkout-session", authenticateToken, async (req, res) => 
         // 3. The total amount for the checkout session should match the grandTotal from the frontend
         const totalAmountInCentavos = Math.round(amount * 100);
 
+        const frontendUrl = process.env.FRONTEND_URL.replace(/\/$/, "");
+
         const checkoutData = {
             data: {
                 attributes: {
                     line_items,
                     payment_method_types: ["gcash", "card"],
-                    success_url: `${process.env.FRONTEND_URL}/success`,
-                    cancel_url: `${process.env.FRONTEND_URL}/cancel`, 
+                    success_url: `${frontendUrl}/success`,
+                    cancel_url: `${frontendUrl}/cancel`,
                     send_email_receipt: true,
                     show_line_items: true,
                     // The API expects the total amount to be here as well for some validations
@@ -2332,5 +2341,73 @@ app.get('/api/logs/stats', authenticateToken, authorizeRoles("admin"), async (re
 // listen to server
 server.listen(process.env.PORT || 5001, () => { //3
     console.log(`Server is running on port ${process.env.PORT || 5001}`);
+});
+
+app.post('/api/orders/:id/complete-payment', authenticateToken, async (req, res) => {
+    try {
+        const { id: orderId } = req.params;
+        const userId = req.user.id;
+
+        const order = await Order.findById(orderId).populate('items.item');
+
+        if (!order) {
+            return res.status(404).json({ success: false, message: 'Order not found.' });
+        }
+
+        if (order.user.toString() !== userId) {
+            return res.status(403).json({ success: false, message: 'You are not authorized to pay for this order.' });
+        }
+
+        // Use the same logic as the frontend to calculate remaining balance
+        let customizedTotal = 0;
+        order.items.forEach(item => {
+            const itemTotal = (item.price || 0) * item.quantity;
+            if (item.item.is_customizable) {
+                customizedTotal += itemTotal;
+            }
+        });
+
+        const remainingBalance = customizedTotal * 0.7;
+        const amountToPay = Math.round(remainingBalance * 100);
+
+        if (amountToPay <= 0) {
+            return res.status(400).json({ success: false, message: 'No remaining balance to be paid.' });
+        }
+
+        const frontendUrl = process.env.FRONTEND_URL.replace(/\/$/, "");
+
+        const paymongoResponse = await axios.post('https://api.paymongo.com/v1/checkout_sessions', {
+            data: {
+                attributes: {
+                    send_email_receipt: true,
+                    show_description: true,
+                    show_line_items: true,
+                    line_items: [{
+                        currency: 'PHP',
+                        amount: amountToPay,
+                        description: `Remaining balance for Order #${order._id.toString().slice(-8)}`,
+                        name: `Full Payment for Order #${order._id.toString().slice(-8)}`,
+                        quantity: 1,
+                    }],
+                    payment_method_types: ['card', 'gcash', 'paymaya', 'grab_pay'],
+                    description: `Payment for Order #${order._id.toString().slice(-8)}`,
+                    success_url: `${frontendUrl}/orders/${order._id}?payment=success`,
+                    cancel_url: `${frontendUrl}/orders/${order._id}?payment=cancelled`,
+                },
+            },
+        }, {
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Basic ${Buffer.from(
+                    `${process.env.PAYMONGO_SECRET_KEY}:`
+                ).toString("base64")}`,
+            },
+        });
+
+        res.json({ checkoutUrl: paymongoResponse.data.data.attributes.checkout_url });
+    } catch (error) {
+        console.error('Error creating complete payment session:', error);
+        res.status(500).json({ success: false, message: 'Server error creating complete payment session' });
+    }
 });
 
