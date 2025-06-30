@@ -478,10 +478,10 @@ const OrderHistory = () => {
                                                         </small>
                                                     </td>
                                                     <td>
-                                                        <div className="fw-bold text-primary fs-5">₱{(order.amount + (order.shippingFee || 0)).toFixed(2)}</div>
+                                                        <div className="fw-bold text-primary fs-5">₱{((order.amount || 0) + (order.shippingFee || 0)).toFixed(2)}</div>
                                                         {order.shippingFee > 0 && (
                                                             <small className="text-muted d-block">
-                                                                Items: ₱{order.amount.toFixed(2)} + Shipping: ₱{order.shippingFee.toFixed(2)}
+                                                                Items: ₱{(order.amount || 0).toFixed(2)} + Shipping: ₱{(order.shippingFee || 0).toFixed(2)}
                                                             </small>
                                                         )}
                                                     </td>

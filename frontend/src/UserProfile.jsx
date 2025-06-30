@@ -903,9 +903,9 @@ const UserProfile = () => {
                                     <div className="d-flex align-items-center">
                                       <BsCalendar className="text-muted me-2" />
                                       <div>
-                                        <div className="fw-medium">{new Date(order.createdAt).toLocaleDateString()}</div>
+                                        <div className="fw-medium">{order.createdAt ? new Date(order.createdAt).toLocaleDateString() : 'No Date'}</div>
                                         <small className="text-muted">
-                                          {new Date(order.createdAt).toLocaleTimeString()}
+                                          {order.createdAt ? new Date(order.createdAt).toLocaleTimeString() : ''}
                                         </small>
                                       </div>
                                     </div>
@@ -920,7 +920,7 @@ const UserProfile = () => {
                                     </Badge>
                                   </td>
                                   <td className="px-4 py-3">
-                                    <div className="fw-bold fs-6">₱{order.amount.toLocaleString()}</div>
+                                    <div className="fw-bold fs-6">₱{order.amount ? order.amount.toLocaleString() : '0.00'}</div>
                                   </td>
                                   <td className="px-4 py-3">
                                     <Button

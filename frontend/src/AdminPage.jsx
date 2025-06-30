@@ -448,11 +448,13 @@ const AdminPage = () => {
                                                     <td className="py-3">
                                                         <div>
                                                             <div className="fw-medium">{order.user?.name || "N/A"}</div>
-                                                            <small className="text-muted">{order.user?.email}</small>
+                                                            <small className="text-muted">{order.user?.email || "No Email"}</small>
                                                         </div>
                                                     </td>
                                                     <td className="py-3">
-                                                        <span className="fw-bold">₱{order.amount.toLocaleString()}</span>
+                                                        <span className="fw-bold">
+                                                            ₱{order.amount ? order.amount.toLocaleString() : "0.00"}
+                                                        </span>
                                                     </td>
                                                     <td className="py-3">
                                                         <Badge bg={getStatusVariant(order.status)} className="text-capitalize px-3 py-2">
@@ -462,7 +464,7 @@ const AdminPage = () => {
                                                     <td className="py-3">
                                                         <div className="text-muted small">
                                                             <BsCalendar className="me-1" />
-                                                            {new Date(order.createdAt).toLocaleDateString()}
+                                                            {order.createdAt ? new Date(order.createdAt).toLocaleDateString() : "No Date"}
                                                         </div>
                                                     </td>
                                                 </tr>
@@ -669,15 +671,15 @@ const AdminPage = () => {
                     </td>
                     <td className="py-3">
                         <div className="small">
-                            {new Date(order.createdAt).toLocaleDateString()}
+                            {order.createdAt ? new Date(order.createdAt).toLocaleDateString() : 'No Date'}
                             <br />
-                            <span className="text-muted">{new Date(order.createdAt).toLocaleTimeString()}</span>
+                            <span className="text-muted">{order.createdAt ? new Date(order.createdAt).toLocaleTimeString() : ''}</span>
                         </div>
                     </td>
                     <td className="py-3">
                         <div>
                             <div className="fw-medium">{order.user?.name || "N/A"}</div>
-                            <small className="text-muted">{order.user?.email}</small>
+                            <small className="text-muted">{order.user?.email || "No Email"}</small>
                         </div>
                     </td>
                     <td className="py-3">
@@ -704,10 +706,10 @@ const AdminPage = () => {
                     </td>
                     <td className="py-3">
                         <div>
-                            <span className="fw-bold fs-6">₱{order.amount.toLocaleString()}</span>
+                            <span className="fw-bold fs-6">₱{order.amount ? order.amount.toLocaleString() : '0.00'}</span>
                             {order.balance > 0 && (
                                 <div className="small text-warning">
-                                    Balance: ₱{order.balance.toLocaleString()}
+                                    Balance: ₱{order.balance ? order.balance.toLocaleString() : '0.00'}
                                 </div>
                             )}
                         </div>
@@ -984,7 +986,7 @@ const AdminPage = () => {
                                 Customer: {selectedOrder?.user?.name}
                             </p>
                             <p className="text-muted">
-                                Amount: ₱{selectedOrder?.amount.toLocaleString()}
+                                Amount: ₱{selectedOrder?.amount ? selectedOrder.amount.toLocaleString() : '0.00'}
                             </p>
                         </div>
 

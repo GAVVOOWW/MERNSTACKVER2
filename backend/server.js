@@ -915,6 +915,74 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
     }
 });
 
+app.post('/api/orders/:id/complete-payment', authenticateToken, async (req, res) => {
+    try {
+        const { id: orderId } = req.params;
+        const userId = req.user.id;
+
+        const order = await Order.findById(orderId).populate('items.item');
+
+        if (!order) {
+            return res.status(404).json({ success: false, message: 'Order not found.' });
+        }
+
+        if (order.user.toString() !== userId) {
+            return res.status(403).json({ success: false, message: 'You are not authorized to pay for this order.' });
+        }
+
+        // Use the same logic as the frontend to calculate remaining balance
+        let customizedTotal = 0;
+        order.items.forEach(item => {
+            const itemTotal = (item.price || 0) * item.quantity;
+            if (item.item.is_customizable) {
+                customizedTotal += itemTotal;
+            }
+        });
+
+        const remainingBalance = customizedTotal * 0.7;
+        const amountToPay = Math.round(remainingBalance * 100);
+
+        if (amountToPay <= 0) {
+            return res.status(400).json({ success: false, message: 'No remaining balance to be paid.' });
+        }
+
+        const frontendUrl = process.env.FRONTEND_URL.replace(/\/$/, "");
+
+        const paymongoResponse = await axios.post('https://api.paymongo.com/v1/checkout_sessions', {
+            data: {
+                attributes: {
+                    send_email_receipt: true,
+                    show_description: true,
+                    show_line_items: true,
+                    line_items: [{
+                        currency: 'PHP',
+                        amount: amountToPay,
+                        description: `Remaining balance for Order #${order._id.toString().slice(-8)}`,
+                        name: `Full Payment for Order #${order._id.toString().slice(-8)}`,
+                        quantity: 1,
+                    }],
+                    payment_method_types: ['card', 'gcash', 'paymaya', 'grab_pay'],
+                    description: `Payment for Order #${order._id.toString().slice(-8)}`,
+                    success_url: `${frontendUrl}/orders/${order._id}?payment=success`,
+                    cancel_url: `${frontendUrl}/orders/${order._id}?payment=cancelled`,
+                },
+            },
+        }, {
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Basic ${Buffer.from(
+                    `${process.env.PAYMONGO_SECRET_KEY}:`
+                ).toString("base64")}`,
+            },
+        });
+
+        res.json({ checkoutUrl: paymongoResponse.data.data.attributes.checkout_url });
+    } catch (error) {
+        console.error('Error creating complete payment session:', error);
+        res.status(500).json({ success: false, message: 'Server error creating complete payment session' });
+    }
+});
+
 
 
 
@@ -2343,71 +2411,5 @@ server.listen(process.env.PORT || 5001, () => { //3
     console.log(`Server is running on port ${process.env.PORT || 5001}`);
 });
 
-app.post('/api/orders/:id/complete-payment', authenticateToken, async (req, res) => {
-    try {
-        const { id: orderId } = req.params;
-        const userId = req.user.id;
 
-        const order = await Order.findById(orderId).populate('items.item');
-
-        if (!order) {
-            return res.status(404).json({ success: false, message: 'Order not found.' });
-        }
-
-        if (order.user.toString() !== userId) {
-            return res.status(403).json({ success: false, message: 'You are not authorized to pay for this order.' });
-        }
-
-        // Use the same logic as the frontend to calculate remaining balance
-        let customizedTotal = 0;
-        order.items.forEach(item => {
-            const itemTotal = (item.price || 0) * item.quantity;
-            if (item.item.is_customizable) {
-                customizedTotal += itemTotal;
-            }
-        });
-
-        const remainingBalance = customizedTotal * 0.7;
-        const amountToPay = Math.round(remainingBalance * 100);
-
-        if (amountToPay <= 0) {
-            return res.status(400).json({ success: false, message: 'No remaining balance to be paid.' });
-        }
-
-        const frontendUrl = process.env.FRONTEND_URL.replace(/\/$/, "");
-
-        const paymongoResponse = await axios.post('https://api.paymongo.com/v1/checkout_sessions', {
-            data: {
-                attributes: {
-                    send_email_receipt: true,
-                    show_description: true,
-                    show_line_items: true,
-                    line_items: [{
-                        currency: 'PHP',
-                        amount: amountToPay,
-                        description: `Remaining balance for Order #${order._id.toString().slice(-8)}`,
-                        name: `Full Payment for Order #${order._id.toString().slice(-8)}`,
-                        quantity: 1,
-                    }],
-                    payment_method_types: ['card', 'gcash', 'paymaya', 'grab_pay'],
-                    description: `Payment for Order #${order._id.toString().slice(-8)}`,
-                    success_url: `${frontendUrl}/orders/${order._id}?payment=success`,
-                    cancel_url: `${frontendUrl}/orders/${order._id}?payment=cancelled`,
-                },
-            },
-        }, {
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Basic ${Buffer.from(
-                    `${process.env.PAYMONGO_SECRET_KEY}:`
-                ).toString("base64")}`,
-            },
-        });
-
-        res.json({ checkoutUrl: paymongoResponse.data.data.attributes.checkout_url });
-    } catch (error) {
-        console.error('Error creating complete payment session:', error);
-        res.status(500).json({ success: false, message: 'Server error creating complete payment session' });
-    }
-});
 

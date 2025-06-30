@@ -173,6 +173,28 @@ const CheckoutPage = () => {
     return { customizedTotal, normalTotal, downPaymentAmount, remainingBalance, fullAmount }
   }
 
+    // Calculate the actual amount to be charged for the current payment
+    const getActualPaymentAmount = () => {
+      if (hasCustomizedItems() && paymentType === "down_payment") {
+        // For down payment: charge 30% of customized items + full price of normal items
+        let actualAmount = 0
+        selectedItems.forEach(entry => {
+          const itemTotal = entry.item.price * entry.quantity
+          const isCustomized = entry.item?.is_customizable || false
+  
+          if (isCustomized) {
+            actualAmount += itemTotal * 0.3 // 30% of customized items
+          } else {
+            actualAmount += itemTotal // Full price of normal items
+          }
+        })
+        return actualAmount
+      } else {
+        // For full payment: charge full price of all items
+        return total
+      }
+    }
+
   // Fetch geographic data
   useEffect(() => {
     const fetchProvinces = async () => {
@@ -276,27 +298,7 @@ const CheckoutPage = () => {
 
 
 
-  // Calculate the actual amount to be charged for the current payment
-  const getActualPaymentAmount = () => {
-    if (hasCustomizedItems() && paymentType === "down_payment") {
-      // For down payment: charge 30% of customized items + full price of normal items
-      let actualAmount = 0
-      selectedItems.forEach(entry => {
-        const itemTotal = entry.item.price * entry.quantity
-        const isCustomized = entry.item?.is_customizable || false
 
-        if (isCustomized) {
-          actualAmount += itemTotal * 0.3 // 30% of customized items
-        } else {
-          actualAmount += itemTotal // Full price of normal items
-        }
-      })
-      return actualAmount
-    } else {
-      // For full payment: charge full price of all items
-      return total
-    }
-  }
 
   const grandTotal = getActualPaymentAmount() + shippingFee
 
