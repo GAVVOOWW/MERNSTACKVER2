@@ -43,7 +43,7 @@ dotenv.config(`./.env`);
 connectDB();
 
 import { pipeline } from '@xenova/transformers';
-import { parseQueryWithGroq } from './utils/groqParser.js';
+import { parseQueryWithGroq, generateComplementaryRecommendations } from './utils/groqParser.js';
 
 
 
@@ -1562,69 +1562,175 @@ app.get("/api/items/:id", async (req, res) => {
     }
 });
 // Items Recommendation
+// Replace your existing /api/items/recommend endpoint with this:
+// Items Recommendation
 app.post('/api/items/recommend', async (req, res) => {
+    console.log("--- GROQ-POWERED COMPLEMENTARY RECOMMENDATION ENGINE STARTED ---");
     try {
-        const { selectedIds } = req.body; // expecting array of item IDs
+        const { selectedIds } = req.body;
+        console.log("[GROQ-REC]: Received request for recommendations based on cart items:", selectedIds);
 
         if (!Array.isArray(selectedIds) || selectedIds.length === 0) {
-            return res.status(400).json({ success: false, message: 'selectedIds array is required' });
+            console.log("[GROQ-REC-ERROR]: No item IDs provided.");
+            return res.status(400).json({ success: false, message: 'Item IDs are required to generate recommendations.' });
         }
 
-        // Populate names for category and furnituretype to use mapping
-        const selectedItems = await Item.find({ _id: { $in: selectedIds } })
+        // 1. Fetch the cart items with full details
+        console.log("[GROQ-REC]: Fetching cart items from database...");
+        const cartItems = await Item.find({ _id: { $in: selectedIds } })
+            .select('name description category furnituretype price')
             .populate('category', 'name')
             .populate('furnituretype', 'name');
 
-        // Mapping from room (category name) to suggested furniture type names
-        const ROOM_TO_TYPES = {
-            'Bathroom': ['Cabinets', 'Bookshelves & Shelving Units', 'Room Dividers'],
-            'Bedroom': ['Bedside Tables', 'Wardrobes', 'Armchairs', 'Study Tables'],
-            'Dining Room': ['Dining Chairs', 'Cabinets', 'Room Dividers', 'Table'],
-            'Home Office / Study': ['Office Chairs', 'Bookshelves & Shelving Units', 'Cabinets', 'Table'],
-            "Kids' Room": ['Bunk Beds', 'Wardrobes', 'Study Tables', 'Bookshelves & Shelving Units'],
-            'Kitchen': ['Dining Chairs', 'Kitchen Tables', 'Cabinets', 'Bookshelves & Shelving Units'],
-            'Living Room': ['Coffee Tables', 'Armchairs', 'Sofa Tables', 'Sofas', 'Bookshelves & Shelving Units'],
-            'Outdoor': ['Outdoor Sofas', 'Patio Dining Sets', 'Coffee Tables', 'Table'],
-            'Utility': ['Cabinets', 'Bookshelves & Shelving Units', 'Shoe Racks']
+        if (cartItems.length === 0) {
+            console.log("[GROQ-REC-ERROR]: No valid items found in cart.");
+            return res.status(404).json({ success: false, message: 'Cart items not found.' });
+        }
+
+        console.log(`[GROQ-REC]: Found ${cartItems.length} items in cart`);
+
+        // 2. Use Groq to analyze cart and generate complementary product recommendations
+        let complementaryAnalysis;
+        try {
+            complementaryAnalysis = await generateComplementaryRecommendations(cartItems);
+            console.log("[GROQ-REC]: Groq analysis completed:", complementaryAnalysis);
+        } catch (groqError) {
+            console.error("[GROQ-REC]: Error calling Groq API:", groqError);
+            // Fallback analysis if Groq fails
+            complementaryAnalysis = {
+                complementaryQuery: "furniture accessories storage lighting",
+                reasoning: "General furniture accessories and complements",
+                detectedRoom: "general",
+                completionLevel: "unknown",
+                priorityItems: ["lighting", "storage", "accessories"],
+                filters: {}
+            };
+        }
+
+        // 3. Search for complementary items based on Groq's recommendations
+        const searchTerms = complementaryAnalysis.complementaryQuery ?
+            complementaryAnalysis.complementaryQuery.split(' ') : ['furniture', 'accessories'];
+        const excludeTerms = complementaryAnalysis.filters?.exclude || [];
+
+        // Build search query
+        const searchQueries = searchTerms.map(term => ({
+            $or: [
+                { name: { $regex: term, $options: 'i' } },
+                { description: { $regex: term, $options: 'i' } }
+            ]
+        }));
+
+        // Build exclude query
+        const excludeQueries = excludeTerms.map(term => ({
+            $and: [
+                { name: { $not: { $regex: term, $options: 'i' } } },
+                { description: { $not: { $regex: term, $options: 'i' } } }
+            ]
+        }));
+
+        // 4. Find complementary items
+        const baseQuery = {
+            $and: [
+                { $or: searchQueries },
+                { _id: { $nin: selectedIds } }, // Exclude cart items
+                { status: 1 }, // Only active items
+                { stock: { $gt: 0 } }, // Only items in stock
+                ...excludeQueries // Exclude unwanted categories
+            ]
         };
 
-        // Collect recommended furniture type *names* based on ROOM_TO_TYPES mapping
-        const recommendedTypeNames = new Set();
+        // Apply price filter if specified
+        if (complementaryAnalysis.filters?.maxPrice) {
+            baseQuery.$and.push({ price: { $lte: complementaryAnalysis.filters.maxPrice } });
+        }
 
-        selectedItems.forEach(itm => {
-            // itm.category could be array or single ref after populate
-            const catArray = Array.isArray(itm.category) ? itm.category : [itm.category];
-            catArray.forEach(catDoc => {
-                if (catDoc && catDoc.name && ROOM_TO_TYPES[catDoc.name]) {
-                    ROOM_TO_TYPES[catDoc.name].forEach(typeName => recommendedTypeNames.add(typeName));
-                }
-            });
+        let complementaryItems = await Item.find(baseQuery)
+            .populate('category', 'name')
+            .populate('furnituretype', 'name')
+            .sort({ sales: -1, createdAt: -1 }) // Prefer popular items
+            .limit(4)
+            .select('_id name description price imageUrl category furnituretype sales');
+
+        console.log(`[GROQ-REC]: Found ${complementaryItems.length} complementary recommendations`);
+
+        // 5. If we don't have enough results, try a broader search
+        if (complementaryItems.length < 2) {
+            console.log("[GROQ-REC]: Expanding search with priority items...");
+
+            const priorityTerms = complementaryAnalysis.priorityItems || ['furniture', 'accessories'];
+            if (priorityTerms.length > 0) {
+                const broadQuery = {
+                    $and: [
+                        {
+                            $or: priorityTerms.map(term => ({
+                                $or: [
+                                    { name: { $regex: term, $options: 'i' } },
+                                    { description: { $regex: term, $options: 'i' } }
+                                ]
+                            }))
+                        },
+                        { _id: { $nin: selectedIds } },
+                        { status: 1 },
+                        { stock: { $gt: 0 } }
+                    ]
+                };
+
+                const additionalItems = await Item.find(broadQuery)
+                    .populate('category', 'name')
+                    .populate('furnituretype', 'name')
+                    .sort({ is_bestseller: -1, sales: -1 })
+                    .limit(4 - complementaryItems.length)
+                    .select('_id name description price imageUrl category furnituretype sales');
+
+                complementaryItems = [...complementaryItems, ...additionalItems];
+            }
+        }
+
+        // 6. If still no results, get some bestsellers excluding cart items
+        if (complementaryItems.length === 0) {
+            console.log("[GROQ-REC]: No specific matches found, getting bestsellers...");
+            complementaryItems = await Item.find({
+                _id: { $nin: selectedIds },
+                status: 1,
+                stock: { $gt: 0 },
+                is_bestseller: true
+            })
+                .populate('category', 'name')
+                .populate('furnituretype', 'name')
+                .sort({ sales: -1 })
+                .limit(4)
+                .select('_id name description price imageUrl category furnituretype sales');
+        }
+
+        console.log("--- GROQ-POWERED COMPLEMENTARY RECOMMENDATION ENGINE COMPLETED ---");
+        res.json({
+            success: true,
+            ItemData: complementaryItems,
+            analysis: {
+                reasoning: complementaryAnalysis.reasoning || "Recommended items that complement your selection",
+                detectedRoom: complementaryAnalysis.detectedRoom || "general",
+                completionLevel: complementaryAnalysis.completionLevel || "improving your setup"
+            }
         });
 
-        // Fetch FurnitureType documents matching these names
-        const furnitureTypeDocs = await FurnitureType.find({ name: { $in: Array.from(recommendedTypeNames) } }, '_id');
-        const furnitureIds = furnitureTypeDocs.map(doc => doc._id);
-
-        // If no mapping-based matches found, fallback to previous simple category/furnituretype overlap
-        let recommended;
-        if (furnitureIds.length > 0) {
-            recommended = await Item.find({
-                _id: { $nin: selectedIds },
-                furnituretype: { $in: furnitureIds }
-            }).limit(4);
-        }
-
-        // Fallback: if still nothing, provide bestseller items (or any others)
-        if (!recommended || recommended.length === 0) {
-            recommended = await Item.find({ _id: { $nin: selectedIds } }).limit(4);
-        }
-
-        res.json({ success: true, ItemData: recommended });
     } catch (err) {
-        console.error('Error fetching recommended items:', err.message);
-        res.status(500).json({ success: false, message: 'Server error fetching recommended items', error: err.message });
+        console.log("--- GROQ-POWERED RECOMMENDATION ENGINE FAILED ---");
+        console.error('[GROQ-REC-ERROR]: An error occurred:', err.message);
+        console.error('[GROQ-REC-ERROR]: Stack trace:', err.stack);
+
+        // Return a fallback response instead of failing completely
+        res.json({
+            success: true,
+            ItemData: [],
+            analysis: {
+                reasoning: "Unable to generate specific recommendations at this time",
+                detectedRoom: "general",
+                completionLevel: "Please browse our catalog for more items"
+            }
+        });
     }
 });
+
 // update a item
 app.put("/api/items/:id", authenticateToken, authorizeRoles("admin"), upload.array('images', 5), async (req, res) => {
     try {
@@ -2070,9 +2176,18 @@ app.get('/api/cart/:id', authenticateToken, async (req, res) => {
 app.get('/api/categories', async (req, res) => {
     try {
         const includeInactive = req.query.includeInactive === 'true';
-        const filter = includeInactive ? {} : { status: 1 };
-        console.log(`[GET /api/categories] includeInactive=${includeInactive}`);
+        const showOnlyInactive = req.query.showOnlyInactive === 'true';
+
+        let filter = {};
+        if (showOnlyInactive) {
+            filter = { status: 0 };
+        } else if (!includeInactive) {
+            filter = { status: 1 };
+        }
+
+        console.log(`[GET /api/categories] includeInactive=${includeInactive}, showOnlyInactive=${showOnlyInactive}, filter:`, filter);
         const categories = await Category.find(filter).sort('name');
+        console.log(`[GET /api/categories] Found ${categories.length} categories with status filter:`, filter);
         res.json({ success: true, CategoryData: categories });
     } catch (err) {
         console.error('Error fetching categories:', err.message);
@@ -2138,9 +2253,18 @@ app.delete('/api/categories/:id', authenticateToken, authorizeRoles("admin"), as
 app.get('/api/furnituretypes', async (req, res) => {
     try {
         const includeInactive = req.query.includeInactive === 'true';
-        const filter = includeInactive ? {} : { status: 1 };
-        console.log(`[GET /api/furnituretypes] includeInactive=${includeInactive}`);
+        const showOnlyInactive = req.query.showOnlyInactive === 'true';
+
+        let filter = {};
+        if (showOnlyInactive) {
+            filter = { status: 0 };
+        } else if (!includeInactive) {
+            filter = { status: 1 };
+        }
+
+        console.log(`[GET /api/furnituretypes] includeInactive=${includeInactive}, showOnlyInactive=${showOnlyInactive}, filter:`, filter);
         const types = await FurnitureType.find(filter).sort('name');
+        console.log(`[GET /api/furnituretypes] Found ${types.length} furniture types with status filter:`, filter);
         res.json({ success: true, FurnitureTypeData: types });
     } catch (err) {
         console.error('Error fetching furniture types:', err.message);
@@ -2404,7 +2528,33 @@ app.get('/api/logs/stats', authenticateToken, authorizeRoles("admin"), async (re
 
 // =================== END LOG ENDPOINTS ===================
 
-// ... existing code ...
+// TEMPORARY TEST ENDPOINT - Remove after testing
+app.get('/api/test/make-utility-inactive', async (req, res) => {
+    try {
+        const utility = await Category.findOneAndUpdate(
+            { name: "Utility" },
+            { status: 0 },
+            { new: true }
+        );
+
+        if (utility) {
+            console.log("Updated Utility category to inactive:", utility);
+            res.json({
+                success: true,
+                message: "Utility category is now inactive",
+                category: utility
+            });
+        } else {
+            res.json({
+                success: false,
+                message: "Utility category not found"
+            });
+        }
+    } catch (err) {
+        console.error("Error updating utility category:", err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
 
 // listen to server
 server.listen(process.env.PORT || 5001, () => { //3

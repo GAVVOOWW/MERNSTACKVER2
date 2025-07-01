@@ -190,7 +190,7 @@ const AdminPage = () => {
                 id: order._id,
                 customer: order.user?.name,
                 status: order.status,
-                amount: order.amount,
+                amount: getOrderAmount(order),
                 customizedItems: order.items?.filter(item => item.item?.is_customizable).map(item => ({
                     name: item.item?.name,
                     price: item.price,
@@ -233,16 +233,71 @@ const AdminPage = () => {
         navigate("/login")
     }
 
+    // Helper function to get the correct order amount
+    // Handles both mobile (totalAmount) and desktop (amount) field variations
+    const getOrderAmount = (order) => {
+        return order.totalAmount || order.amount || 0
+    }
+
     // Dashboard View Component
     const DashboardView = () => {
-        const totalSales = orders
-            .filter((o) => o.status === "On Process" || o.status === "Delivered")
-            .reduce((sum, o) => sum + o.amount, 0)
+        // Calculate total sales from all orders
+        const totalSales = orders.reduce((sum, order) => {
+            return sum + getOrderAmount(order);
+        }, 0)
 
+        // Additional analytics
         const lowStockItems = items.filter((item) => item.stock < 5)
         const recentOrders = orders.slice(0, 5)
-        const pendingOrders = orders.filter((o) => o.status === "On Process").length
-        const completedOrders = orders.filter((o) => o.status === "Delivered").length
+
+        // Order status counts
+        const pendingOrders = orders.filter((o) => o.status === "Pending").length
+        const processingOrders = orders.filter((o) => o.status === "On Process").length
+        const deliveredOrders = orders.filter((o) => o.status === "Delivered").length
+        const pickedUpOrders = orders.filter((o) => o.status === "Picked Up").length
+        const completedOrders = deliveredOrders + pickedUpOrders
+
+        // Count customized orders (orders with custom dimensions)
+        const customizedOrders = orders.filter(order =>
+            order.items?.some(item =>
+                item.customH != null && item.customW != null && item.customL != null
+            )
+        ).length
+
+        // Payment analytics
+        const fullyPaidOrders = orders.filter((o) => o.paymentStatus === "Fully Paid").length
+        const pendingPaymentOrders = orders.filter((o) => o.paymentStatus === "Pending Downpayment").length
+
+        // Revenue breakdown
+        const productRevenue = totalSales
+
+        // Debug logging for sales calculation
+        console.log("=== DASHBOARD SALES ANALYSIS ===")
+        console.log("Total orders:", orders.length)
+        console.log("Orders by status:", {
+            pending: pendingOrders,
+            processing: processingOrders,
+            delivered: deliveredOrders,
+            pickedUp: pickedUpOrders,
+            completed: completedOrders,
+            customized: customizedOrders
+        })
+        console.log("Payment status:", {
+            fullyPaid: fullyPaidOrders,
+            pendingPayment: pendingPaymentOrders
+        })
+        console.log("Revenue calculation:", {
+            totalSales: totalSales,
+            totalOrders: orders.length
+        })
+
+        // Log all orders contributing to total sales
+        console.log("All orders details:", orders.map(o => ({
+            id: o._id.slice(-6),
+            status: o.status,
+            paymentStatus: o.paymentStatus,
+            amount: getOrderAmount(o)
+        })))
 
         return (
 
@@ -350,11 +405,10 @@ const AdminPage = () => {
                             <Card.Body>
                                 <div className="d-flex justify-content-between align-items-start">
                                     <div>
-                                        <h3 className="fw-bold mb-1 text-white">{totalSales.toLocaleString()}</h3>
+                                        <h3 className="fw-bold mb-1 text-white">₱{totalSales.toLocaleString()}</h3>
                                         <p className="mb-0 text-white-50">Total Revenue</p>
                                         <small className="text-white-50">
-                                            <BsArrowUp className="me-1" />
-                                            +15% from last month
+                                            All Orders Revenue
                                         </small>
                                     </div>
                                     <div className="p-3 rounded-circle" style={{ backgroundColor: "rgba(255, 255, 255, 0.2)" }}>
@@ -372,10 +426,10 @@ const AdminPage = () => {
                         <Card className="border-0 shadow-sm text-center">
                             <Card.Body>
                                 <div className="text-warning mb-2">
-                                    <BsBell size={32} />
+                                    <BsGear size={32} />
                                 </div>
-                                <h4 className="fw-bold text-warning">{pendingOrders}</h4>
-                                <p className="text-muted mb-0">Pending Orders</p>
+                                <h4 className="fw-bold text-warning">{customizedOrders}</h4>
+                                <p className="text-muted mb-0">Customized Orders</p>
                             </Card.Body>
                         </Card>
                     </Col>
@@ -383,7 +437,7 @@ const AdminPage = () => {
                         <Card className="border-0 shadow-sm text-center">
                             <Card.Body>
                                 <div className="text-success mb-2">
-                                    <BsCheck size={32} />
+                                    <BsCheckCircle size={32} />
                                 </div>
                                 <h4 className="fw-bold text-success">{completedOrders}</h4>
                                 <p className="text-muted mb-0">Completed Orders</p>
@@ -404,11 +458,11 @@ const AdminPage = () => {
                     <Col lg={3} md={6}>
                         <Card className="border-0 shadow-sm text-center">
                             <Card.Body>
-                                <div className="text-info mb-2">
-                                    <BsGraphUpArrow size={32} />
+                                <div className="text-primary mb-2">
+                                    <BsCart size={32} />
                                 </div>
-                                <h4 className="fw-bold text-info">{categories.length}</h4>
-                                <p className="text-muted mb-0">Categories</p>
+                                <h4 className="fw-bold text-primary">{processingOrders}</h4>
+                                <p className="text-muted mb-0">Processing Orders</p>
                             </Card.Body>
                         </Card>
                     </Col>
@@ -453,7 +507,7 @@ const AdminPage = () => {
                                                     </td>
                                                     <td className="py-3">
                                                         <span className="fw-bold">
-                                                            ₱{order.amount ? order.amount.toLocaleString() : "0.00"}
+                                                            ₱{getOrderAmount(order).toLocaleString()}
                                                         </span>
                                                     </td>
                                                     <td className="py-3">
@@ -706,7 +760,7 @@ const AdminPage = () => {
                     </td>
                     <td className="py-3">
                         <div>
-                            <span className="fw-bold fs-6">₱{order.amount ? order.amount.toLocaleString() : '0.00'}</span>
+                            <span className="fw-bold fs-6">₱{getOrderAmount(order).toLocaleString()}</span>
                             {order.balance > 0 && (
                                 <div className="small text-warning">
                                     Balance: ₱{order.balance ? order.balance.toLocaleString() : '0.00'}
@@ -986,7 +1040,7 @@ const AdminPage = () => {
                                 Customer: {selectedOrder?.user?.name}
                             </p>
                             <p className="text-muted">
-                                Amount: ₱{selectedOrder?.amount ? selectedOrder.amount.toLocaleString() : '0.00'}
+                                Amount: ₱{selectedOrder ? getOrderAmount(selectedOrder).toLocaleString() : '0.00'}
                             </p>
                         </div>
 
@@ -1904,14 +1958,14 @@ const AdminPage = () => {
         }
 
         const deleteCategory = async (id) => {
-            if (!window.confirm("Delete this category? This may affect existing products.")) return
+            if (!window.confirm("Deactivate this category? This will hide it from products but preserve existing associations.")) return
             try {
                 await axios.delete(`${BACKEND_URL}/api/categories/${id}`, {
                     headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
                 })
                 fetchData()
             } catch (err) {
-                alert(err.response?.data?.message || "Error deleting category")
+                alert(err.response?.data?.message || "Error deactivating category")
             }
         }
 
@@ -1946,18 +2000,19 @@ const AdminPage = () => {
         }
 
         const deleteFurnitureType = async (id) => {
-            if (!window.confirm("Delete this furniture type? This may affect existing products.")) return
+            if (!window.confirm("Deactivate this furniture type? This will hide it from products but preserve existing associations.")) return
             try {
                 await axios.delete(`${BACKEND_URL}/api/furnituretypes/${id}`, {
                     headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
                 })
                 fetchData()
             } catch (err) {
-                alert(err.response?.data?.message || "Error deleting furniture type")
+                alert(err.response?.data?.message || "Error deactivating furniture type")
             }
         }
 
         const activateCategory = async (id) => {
+            if (!window.confirm("Reactivate this category? It will become available for products again.")) return
             try {
                 await axios.put(`${BACKEND_URL}/api/categories/${id}/activate`, {}, {
                     headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
@@ -1969,6 +2024,7 @@ const AdminPage = () => {
         }
 
         const activateFurnitureTypeAPI = async (id) => {
+            if (!window.confirm("Reactivate this furniture type? It will become available for products again.")) return
             try {
                 await axios.put(`${BACKEND_URL}/api/furnituretypes/${id}/activate`, {}, {
                     headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
@@ -1987,19 +2043,29 @@ const AdminPage = () => {
                         <p className="text-muted mb-0">Manage categories and furniture types for your products</p>
                     </div>
                     <div className="d-flex gap-2">
+                        <div className="d-flex gap-2">
+                            <Badge bg="success" className="fs-6">
+                                {categories.filter(c => !showInactiveCategories).length} Active Categories
+                            </Badge>
+                            <Badge bg="success" className="fs-6">
+                                {furnitureTypes.filter(ft => !showInactiveTypes).length} Active Types
+                            </Badge>
+                        </div>
                         <Button
                             size="sm"
-                            variant={showInactiveCategories ? "secondary" : "outline-secondary"}
+                            variant={showInactiveCategories ? "warning" : "outline-secondary"}
                             onClick={() => setShowInactiveCategories(prev => !prev)}
                         >
-                            {showInactiveCategories ? "Hide" : "Show"} Inactive Categories
+                            <BsEye className="me-1" />
+                            {showInactiveCategories ? "Show Active" : "Show Inactive"} Categories
                         </Button>
                         <Button
                             size="sm"
-                            variant={showInactiveTypes ? "secondary" : "outline-secondary"}
+                            variant={showInactiveTypes ? "warning" : "outline-secondary"}
                             onClick={() => setShowInactiveTypes(prev => !prev)}
                         >
-                            {showInactiveTypes ? "Hide" : "Show"} Inactive Types
+                            <BsEye className="me-1" />
+                            {showInactiveTypes ? "Show Active" : "Show Inactive"} Types
                         </Button>
                     </div>
                 </div>
@@ -2008,10 +2074,22 @@ const AdminPage = () => {
                     <Col lg={6}>
                         <Card className="border-0 shadow-sm h-100">
                             <Card.Header className="bg-white border-bottom-0 py-3">
-                                <h5 className="mb-0 fw-bold">
-                                    <BsTagFill className="me-2 text-primary" />
-                                    Product Categories
-                                </h5>
+                                <div className="d-flex justify-content-between align-items-center">
+                                    <h5 className="mb-0 fw-bold">
+                                        <BsTagFill className="me-2 text-primary" />
+                                        Product Categories ({categories.length})
+                                    </h5>
+                                    <div className="d-flex gap-2">
+                                        {showInactiveCategories ? (
+                                            <Badge bg="danger">Showing Inactive Categories</Badge>
+                                        ) : (
+                                            <>
+                                                <Badge bg="success">{categories.filter(c => c.status === 1).length} Active</Badge>
+                                                <Badge bg="secondary">{categories.filter(c => c.status === 0).length} Inactive</Badge>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
                             </Card.Header>
                             <Card.Body>
                                 <InputGroup className="mb-3">
@@ -2032,6 +2110,7 @@ const AdminPage = () => {
                                         <thead className="table-light">
                                             <tr>
                                                 <th className="border-0 fw-semibold">Category Name</th>
+                                                <th className="border-0 fw-semibold">Status</th>
                                                 <th className="border-0 fw-semibold" style={{ width: "120px" }}>
                                                     Actions
                                                 </th>
@@ -2047,13 +2126,24 @@ const AdminPage = () => {
                                                 </tr>
                                             ) : categories.length === 0 ? (
                                                 <tr>
-                                                    <td colSpan="2" className="text-center py-4 text-muted">
-                                                        {showInactiveCategories ? "No inactive categories found" : "No categories found"}
+                                                    <td colSpan="3" className="text-center py-4 text-muted">
+                                                        <div>
+                                                            <BsTagFill size={32} className="mb-2" />
+                                                            <div className="fw-medium">
+                                                                {showInactiveCategories ? "No inactive categories found" : "No categories created yet"}
+                                                            </div>
+                                                            <small>
+                                                                {showInactiveCategories
+                                                                    ? "All categories are currently active"
+                                                                    : "Create your first category to organize products"
+                                                                }
+                                                            </small>
+                                                        </div>
                                                     </td>
                                                 </tr>
                                             ) : (
                                                 categories.map((cat) => (
-                                                    <tr key={cat._id} className="border-bottom">
+                                                    <tr key={cat._id} className={`border-bottom ${editingCategory?._id === cat._id ? 'table-warning' : ''}`}>
                                                         <td className="py-3">
                                                             {editingCategory?._id === cat._id ? (
                                                                 <Form.Control
@@ -2068,29 +2158,63 @@ const AdminPage = () => {
                                                                     onKeyPress={(e) => e.key === "Enter" && updateCategory()}
                                                                 />
                                                             ) : (
-                                                                <span className="fw-medium">{cat.name}</span>
+                                                                <div>
+                                                                    <div className="fw-medium">{cat.name}</div>
+                                                                    <small className="text-muted">ID: #{cat._id.slice(-6)}</small>
+                                                                </div>
                                                             )}
                                                         </td>
                                                         <td className="py-3">
+                                                            <Badge bg={cat.status === 1 ? "success" : "danger"} className="px-3 py-2">
+                                                                {cat.status === 1 ? "Active" : "Inactive"}
+                                                            </Badge>
+                                                        </td>
+                                                        <td className="py-3">
                                                             {showInactiveCategories ? (
-                                                                <Button size="sm" variant="success" onClick={() => activateCategory(cat._id)}>
+                                                                <Button
+                                                                    size="sm"
+                                                                    variant="success"
+                                                                    onClick={() => activateCategory(cat._id)}
+                                                                    title="Reactivate category"
+                                                                >
+                                                                    <BsPower className="me-1" />
                                                                     Activate
                                                                 </Button>
                                                             ) : editingCategory?._id === cat._id ? (
                                                                 <div className="d-flex gap-1">
-                                                                    <Button size="sm" variant="success" onClick={updateCategory}>
+                                                                    <Button
+                                                                        size="sm"
+                                                                        variant="success"
+                                                                        onClick={updateCategory}
+                                                                        title="Save changes"
+                                                                    >
                                                                         <BsCheck />
                                                                     </Button>
-                                                                    <Button size="sm" variant="secondary" onClick={() => setEditingCategory(null)}>
+                                                                    <Button
+                                                                        size="sm"
+                                                                        variant="secondary"
+                                                                        onClick={() => setEditingCategory(null)}
+                                                                        title="Cancel editing"
+                                                                    >
                                                                         <BsX />
                                                                     </Button>
                                                                 </div>
                                                             ) : (
                                                                 <div className="d-flex gap-1">
-                                                                    <Button size="sm" variant="outline-primary" onClick={() => setEditingCategory(cat)}>
+                                                                    <Button
+                                                                        size="sm"
+                                                                        variant="outline-primary"
+                                                                        onClick={() => setEditingCategory(cat)}
+                                                                        title="Edit category"
+                                                                    >
                                                                         <BsPencil />
                                                                     </Button>
-                                                                    <Button size="sm" variant="outline-danger" onClick={() => deleteCategory(cat._id)}>
+                                                                    <Button
+                                                                        size="sm"
+                                                                        variant="outline-danger"
+                                                                        onClick={() => deleteCategory(cat._id)}
+                                                                        title="Deactivate category"
+                                                                    >
                                                                         <BsTrash />
                                                                     </Button>
                                                                 </div>
@@ -2109,10 +2233,22 @@ const AdminPage = () => {
                     <Col lg={6}>
                         <Card className="border-0 shadow-sm h-100">
                             <Card.Header className="bg-white border-bottom-0 py-3">
-                                <h5 className="mb-0 fw-bold">
-                                    <BsShop className="me-2 text-success" />
-                                    Furniture Types
-                                </h5>
+                                <div className="d-flex justify-content-between align-items-center">
+                                    <h5 className="mb-0 fw-bold">
+                                        <BsShop className="me-2 text-success" />
+                                        Furniture Types ({furnitureTypes.length})
+                                    </h5>
+                                    <div className="d-flex gap-2">
+                                        {showInactiveTypes ? (
+                                            <Badge bg="danger">Showing Inactive Types</Badge>
+                                        ) : (
+                                            <>
+                                                <Badge bg="success">{furnitureTypes.filter(ft => ft.status === 1).length} Active</Badge>
+                                                <Badge bg="secondary">{furnitureTypes.filter(ft => ft.status === 0).length} Inactive</Badge>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
                             </Card.Header>
                             <Card.Body>
                                 <InputGroup className="mb-3">
@@ -2133,6 +2269,7 @@ const AdminPage = () => {
                                         <thead className="table-light">
                                             <tr>
                                                 <th className="border-0 fw-semibold">Furniture Type</th>
+                                                <th className="border-0 fw-semibold">Status</th>
                                                 <th className="border-0 fw-semibold" style={{ width: "120px" }}>
                                                     Actions
                                                 </th>
@@ -2148,13 +2285,24 @@ const AdminPage = () => {
                                                 </tr>
                                             ) : furnitureTypes.length === 0 ? (
                                                 <tr>
-                                                    <td colSpan="2" className="text-center py-4 text-muted">
-                                                        {showInactiveTypes ? "No inactive furniture types found" : "No furniture types found"}
+                                                    <td colSpan="3" className="text-center py-4 text-muted">
+                                                        <div>
+                                                            <BsShop size={32} className="mb-2" />
+                                                            <div className="fw-medium">
+                                                                {showInactiveTypes ? "No inactive furniture types found" : "No furniture types created yet"}
+                                                            </div>
+                                                            <small>
+                                                                {showInactiveTypes
+                                                                    ? "All furniture types are currently active"
+                                                                    : "Create your first furniture type to classify products"
+                                                                }
+                                                            </small>
+                                                        </div>
                                                     </td>
                                                 </tr>
                                             ) : (
                                                 furnitureTypes.map((ft) => (
-                                                    <tr key={ft._id} className="border-bottom">
+                                                    <tr key={ft._id} className={`border-bottom ${editingFurnitureType?._id === ft._id ? 'table-warning' : ''}`}>
                                                         <td className="py-3">
                                                             {editingFurnitureType?._id === ft._id ? (
                                                                 <Form.Control
@@ -2169,29 +2317,63 @@ const AdminPage = () => {
                                                                     onKeyPress={(e) => e.key === "Enter" && updateFurnitureType()}
                                                                 />
                                                             ) : (
-                                                                <span className="fw-medium">{ft.name}</span>
+                                                                <div>
+                                                                    <div className="fw-medium">{ft.name}</div>
+                                                                    <small className="text-muted">ID: #{ft._id.slice(-6)}</small>
+                                                                </div>
                                                             )}
                                                         </td>
                                                         <td className="py-3">
+                                                            <Badge bg={ft.status === 1 ? "success" : "danger"} className="px-3 py-2">
+                                                                {ft.status === 1 ? "Active" : "Inactive"}
+                                                            </Badge>
+                                                        </td>
+                                                        <td className="py-3">
                                                             {showInactiveTypes ? (
-                                                                <Button size="sm" variant="success" onClick={() => activateFurnitureTypeAPI(ft._id)}>
+                                                                <Button
+                                                                    size="sm"
+                                                                    variant="success"
+                                                                    onClick={() => activateFurnitureTypeAPI(ft._id)}
+                                                                    title="Reactivate furniture type"
+                                                                >
+                                                                    <BsPower className="me-1" />
                                                                     Activate
                                                                 </Button>
                                                             ) : editingFurnitureType?._id === ft._id ? (
                                                                 <div className="d-flex gap-1">
-                                                                    <Button size="sm" variant="success" onClick={updateFurnitureType}>
+                                                                    <Button
+                                                                        size="sm"
+                                                                        variant="success"
+                                                                        onClick={updateFurnitureType}
+                                                                        title="Save changes"
+                                                                    >
                                                                         <BsCheck />
                                                                     </Button>
-                                                                    <Button size="sm" variant="secondary" onClick={() => setEditingFurnitureType(null)}>
+                                                                    <Button
+                                                                        size="sm"
+                                                                        variant="secondary"
+                                                                        onClick={() => setEditingFurnitureType(null)}
+                                                                        title="Cancel editing"
+                                                                    >
                                                                         <BsX />
                                                                     </Button>
                                                                 </div>
                                                             ) : (
                                                                 <div className="d-flex gap-1">
-                                                                    <Button size="sm" variant="outline-primary" onClick={() => setEditingFurnitureType(ft)}>
+                                                                    <Button
+                                                                        size="sm"
+                                                                        variant="outline-primary"
+                                                                        onClick={() => setEditingFurnitureType(ft)}
+                                                                        title="Edit furniture type"
+                                                                    >
                                                                         <BsPencil />
                                                                     </Button>
-                                                                    <Button size="sm" variant="outline-danger" onClick={() => deleteFurnitureType(ft._id)}>
+                                                                    <Button
+                                                                        size="sm"
+                                                                        variant="outline-danger"
+                                                                        onClick={() => deleteFurnitureType(ft._id)}
+                                                                        title="Deactivate furniture type"
+                                                                    >
                                                                         <BsTrash />
                                                                     </Button>
                                                                 </div>
@@ -2625,12 +2807,14 @@ const AdminPage = () => {
                             Settings
                         </Nav.Link>
                     </Nav.Item>
-                    <Nav.Item className="mb-2">
+
+                    {/* analytics commented out */}
+                    {/*<Nav.Item className="mb-2">
                         <Nav.Link eventKey="analytics" className="text-white rounded d-flex align-items-center py-3">
                             <BsBarChart className="me-3" />
                             Analytics
                         </Nav.Link>
-                    </Nav.Item>
+                    </Nav.Item>*/}
                     <Nav.Item className="mb-2">
                         <Nav.Link eventKey="logs" className="text-white rounded d-flex align-items-center py-3">
                             <BsClipboardCheck className="me-3" />
@@ -2657,7 +2841,8 @@ const AdminPage = () => {
                 .filter((o) => o.status === "On Process" || o.status === "Delivered")
                 .forEach((order) => {
                     order.items.forEach((it) => {
-                        if (!it.item) return
+                        if (!it.item) return // a sold item must have a base item
+
                         const id = it.item._id
                         if (!map[id]) {
                             map[id] = {
@@ -2667,12 +2852,27 @@ const AdminPage = () => {
                                 cost: 0,
                             }
                         }
-                        const qty = it.quantity || 0
-                        const price = it.item.price || 0
-                        const costUnit = it.item.cost || 0
+
+                        const qty = it.quantity || 1
+                        const isCustom = it.customH != null && it.customW != null && it.customL != null
+
+                        // Revenue is always based on the price recorded in the order item
+                        const revenuePerUnit = it.price || 0
+                        map[id].revenue += revenuePerUnit * qty
+
+                        // Cost calculation
+                        let costPerUnit = 0
+                        if (isCustom && it.item.is_customizable) {
+                            const profitMargin = it.item.customization_options?.profit_margin || 0.5
+                            // Reverse calculate cost from price using profit margin
+                            costPerUnit = revenuePerUnit / (1 + profitMargin)
+                        } else {
+                            // For standard items, use the recorded cost
+                            costPerUnit = it.item.cost || 0
+                        }
+
+                        map[id].cost += costPerUnit * qty
                         map[id].quantity += qty
-                        map[id].revenue += price * qty
-                        map[id].cost += costUnit * qty
                     })
                 })
             return Object.values(map)
@@ -2689,18 +2889,38 @@ const AdminPage = () => {
                     const d = new Date(order.createdAt)
                     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` // YYYY-MM
                     if (!map[key]) map[key] = { revenue: 0, cost: 0 }
-                    map[key].revenue += order.amount
-                    // accumulate cost of goods
+
+                    // Revenue is the total amount of the order.
+                    map[key].revenue += getOrderAmount(order)
+
+                    // Cost needs to be calculated per item in the order.
+                    let orderCost = 0
                     order.items.forEach((it) => {
                         if (!it.item) return
-                        map[key].cost += (it.item.cost || 0) * (it.quantity || 0)
+
+                        const qty = it.quantity || 1
+                        const isCustom = it.customH != null && it.customW != null && it.customL != null
+                        const revenuePerUnit = it.price || 0
+
+                        let costPerUnit = 0
+                        if (isCustom && it.item.is_customizable) {
+                            const profitMargin = it.item.customization_options?.profit_margin || 0.5
+                            costPerUnit = revenuePerUnit / (1 + profitMargin)
+                        } else {
+                            costPerUnit = it.item.cost || 0
+                        }
+                        orderCost += costPerUnit * qty
                     })
+                    map[key].cost += orderCost
                 })
             return Object.entries(map)
                 .map(([month, v]) => ({ month, revenue: v.revenue, profit: v.revenue - v.cost }))
                 .sort((a, b) => (a.month > b.month ? 1 : -1))
                 .slice(-12)
         }, [orders])
+
+        // Overall totals
+        const totalRevenue = salesPerItem.reduce((sum, item) => sum + item.revenue, 0)
 
         return (
             <div>
@@ -2859,7 +3079,7 @@ const AdminPage = () => {
 
                 return {
                     ...order,
-                    customPrice: customPrice
+                    customPrice: customPrice || getOrderAmount(order) // Fallback to total order amount
                 }
             })
         }, [customizedOrders])
@@ -2929,7 +3149,7 @@ const AdminPage = () => {
             // Filter by price range
             if (priceFilter !== "all") {
                 filtered = filtered.filter(order => {
-                    const price = order.customPrice
+                    const price = order.customPrice || getOrderAmount(order)
                     switch (priceFilter) {
                         case "low":
                             return price < 5000
@@ -2952,9 +3172,9 @@ const AdminPage = () => {
                     case "oldest":
                         return new Date(a.createdAt) - new Date(b.createdAt)
                     case "price-high":
-                        return b.customPrice - a.customPrice
+                        return (b.customPrice || getOrderAmount(b)) - (a.customPrice || getOrderAmount(a))
                     case "price-low":
-                        return a.customPrice - b.customPrice
+                        return (a.customPrice || getOrderAmount(a)) - (b.customPrice || getOrderAmount(b))
                     case "status":
                         return a.status.localeCompare(b.status)
                     default:
@@ -3181,7 +3401,7 @@ const AdminPage = () => {
                                                 </div>
                                             </td>
                                             <td className="py-3">
-                                                <span className="fw-bold fs-6 text-primary">₱{order.customPrice?.toLocaleString()}</span>
+                                                <span className="fw-bold fs-6 text-primary">₱{(order.customPrice || getOrderAmount(order))?.toLocaleString()}</span>
                                             </td>
                                             <td className="py-3">
                                                 <div className="small">
@@ -3341,12 +3561,13 @@ const AdminPage = () => {
                                 {!sidebarCollapsed && "Categories and Furniture Types"}
                             </Nav.Link>
                         </Nav.Item>
-                        <Nav.Item className="mb-2">
+                        {/* analytics commented out */}
+                        {/*<Nav.Item className="mb-2">
                             <Nav.Link eventKey="analytics" className="text-white rounded d-flex align-items-center py-3 px-3">
                                 <BsBarChart className={sidebarCollapsed ? "mx-auto" : "me-3"} />
                                 {!sidebarCollapsed && "Analytics"}
                             </Nav.Link>
-                        </Nav.Item>
+                        </Nav.Item>*/}
                         <Nav.Item className="mb-2">
                             <Nav.Link eventKey="logs" className="text-white rounded d-flex align-items-center py-3 px-3">
                                 <BsClipboardCheck className={sidebarCollapsed ? "mx-auto" : "me-3"} />
@@ -3400,7 +3621,7 @@ const AdminPage = () => {
 
                         {activeTab === "categoriesandfurnituretypes" && <StoreSettingsView />}
                         {activeTab === "chat" && <ChatPage />}
-                        {activeTab === "analytics" && <AnalyticsView />}
+                        {/* {activeTab === "analytics" && <AnalyticsView />} */}
                         {activeTab === "logs" && <LogsView />}
                     </div>
                 </div>

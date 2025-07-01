@@ -49,6 +49,12 @@ import {
   BsX,
   BsCurrencyDollar,
   BsGear,
+  BsLightbulb,
+  BsPlus,
+  BsRobot,
+  BsStarFill,
+  BsHeart,
+  BsEye,
 } from "react-icons/bs"
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
@@ -117,6 +123,13 @@ const CheckoutPage = () => {
 
   const userRole = localStorage.getItem("role")
 
+  // AI Recommendation Modal State
+  const [showRecommendationModal, setShowRecommendationModal] = useState(false)
+  const [recommendations, setRecommendations] = useState([])
+  const [recommendationAnalysis, setRecommendationAnalysis] = useState(null)
+  const [recommendationLoading, setRecommendationLoading] = useState(false)
+  const [recommendationError, setRecommendationError] = useState(null)
+
   // Helper function to check if cart has customized items
   const hasCustomizedItems = () => {
     console.log("🔍 [hasCustomizedItems] Checking if cart has customized items")
@@ -173,27 +186,27 @@ const CheckoutPage = () => {
     return { customizedTotal, normalTotal, downPaymentAmount, remainingBalance, fullAmount }
   }
 
-    // Calculate the actual amount to be charged for the current payment
-    const getActualPaymentAmount = () => {
-      if (hasCustomizedItems() && paymentType === "down_payment") {
-        // For down payment: charge 30% of customized items + full price of normal items
-        let actualAmount = 0
-        selectedItems.forEach(entry => {
-          const itemTotal = entry.item.price * entry.quantity
-          const isCustomized = entry.item?.is_customizable || false
-  
-          if (isCustomized) {
-            actualAmount += itemTotal * 0.3 // 30% of customized items
-          } else {
-            actualAmount += itemTotal // Full price of normal items
-          }
-        })
-        return actualAmount
-      } else {
-        // For full payment: charge full price of all items
-        return total
-      }
+  // Calculate the actual amount to be charged for the current payment
+  const getActualPaymentAmount = () => {
+    if (hasCustomizedItems() && paymentType === "down_payment") {
+      // For down payment: charge 30% of customized items + full price of normal items
+      let actualAmount = 0
+      selectedItems.forEach(entry => {
+        const itemTotal = entry.item.price * entry.quantity
+        const isCustomized = entry.item?.is_customizable || false
+
+        if (isCustomized) {
+          actualAmount += itemTotal * 0.3 // 30% of customized items
+        } else {
+          actualAmount += itemTotal // Full price of normal items
+        }
+      })
+      return actualAmount
+    } else {
+      // For full payment: charge full price of all items
+      return total
     }
+  }
 
   // Fetch geographic data
   useEffect(() => {
@@ -295,10 +308,6 @@ const CheckoutPage = () => {
   // Filter selected items and calculate totals
   const selectedItems = allItems.filter((entry) => entry.item && selected[entry.item._id])
   const total = selectedItems.reduce((sum, entry) => sum + entry.item.price * entry.quantity, 0)
-
-
-
-
 
   const grandTotal = getActualPaymentAmount() + shippingFee
 
@@ -545,6 +554,221 @@ const CheckoutPage = () => {
     return 100
   }
 
+  // Fetch AI Recommendations
+  const fetchAIRecommendations = async () => {
+    if (selectedItems.length === 0) {
+      setRecommendationError("Please select at least one item to get recommendations.")
+      return
+    }
+
+    setRecommendationLoading(true)
+    setRecommendationError(null)
+
+    try {
+      console.log("🤖 [AI Recommendations] Fetching recommendations for items:", selectedItems.map(item => item.item._id))
+
+      const response = await axios.post(`${BACKEND_URL}/api/items/recommend`, {
+        selectedIds: selectedItems.map(item => item.item._id)
+      })
+
+      console.log("🤖 [AI Recommendations] Response:", response.data)
+
+      if (response.data.success) {
+        setRecommendations(response.data.ItemData || [])
+        setRecommendationAnalysis(response.data.analysis || null)
+      } else {
+        setRecommendationError("Unable to generate recommendations at this time.")
+      }
+    } catch (error) {
+      console.error("🤖 [AI Recommendations] Error:", error)
+      setRecommendationError('Failed to fetch recommendations. Please try again.')
+    } finally {
+      setRecommendationLoading(false)
+    }
+  }
+
+  // Add recommended item to checkout
+  const addRecommendedItemToCheckout = async (item) => {
+    console.log("🛒 [AI Recommendations] Adding recommended item to cart:", item.name)
+
+    try {
+      // First, add the item to the user's cart via API
+      const userId = localStorage.getItem("userId")
+      const token = localStorage.getItem("token")
+
+      if (!userId || !token) {
+        alert("Please log in to add items to your cart.")
+        return
+      }
+
+      // Add to cart API call
+      await axios.post(`${BACKEND_URL}/api/cart/${userId}/add`, {
+        itemId: item._id,
+        quantity: 1
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+
+      // Check if item already exists in allItems
+      const existingItemIndex = allItems.findIndex(entry => entry.item._id === item._id)
+
+      if (existingItemIndex !== -1) {
+        // Item already exists, just select it
+        setSelected(prev => ({ ...prev, [item._id]: true }))
+        alert(`${item.name} is already in your cart and has been selected for checkout.`)
+      } else {
+        // Add new item to allItems array
+        const newCartEntry = {
+          item: item,
+          quantity: 1
+        }
+
+        // Update the allItems array by creating a new reference
+        allItems.push(newCartEntry)
+
+        // Select the new item for checkout
+        setSelected(prev => ({ ...prev, [item._id]: true }))
+
+        alert(`${item.name} has been added to your cart and selected for checkout!`)
+      }
+
+      // Don't close modal, let user add more items if they want
+    } catch (error) {
+      console.error("Error adding item to cart:", error)
+      alert("Failed to add item to cart. Please try again.")
+    }
+  }
+
+  // Open recommendation modal and fetch recommendations
+  const openRecommendationModal = () => {
+    setShowRecommendationModal(true)
+    fetchAIRecommendations()
+  }
+
+  // Render recommendation results
+  const renderRecommendations = () => {
+    if (recommendationLoading) {
+      return (
+        <div className="text-center py-5">
+          <Spinner animation="border" variant="primary" size="lg" />
+          <h5 className="mt-3">AI is analyzing your cart...</h5>
+          <p className="text-muted">Finding the perfect complementary items for you</p>
+        </div>
+      )
+    }
+
+    if (recommendationError) {
+      return (
+        <Alert variant="danger" className="mt-3">
+          <BsExclamationTriangle className="me-2" />
+          {recommendationError}
+          <div className="mt-2">
+            <Button variant="outline-danger" size="sm" onClick={fetchAIRecommendations}>
+              Try Again
+            </Button>
+          </div>
+        </Alert>
+      )
+    }
+
+    if (recommendations.length === 0) {
+      return (
+        <Alert variant="info" className="text-center py-4">
+          <BsLightbulb size={48} className="text-muted mb-3" />
+          <h5>No specific recommendations found</h5>
+          <p className="text-muted mb-0">Your selection is already complete, or we couldn't find matching complementary items.</p>
+        </Alert>
+      )
+    }
+
+    return (
+      <div>
+        {/* AI Analysis Section */}
+        {recommendationAnalysis && (
+          <Alert variant="primary" className="mb-4">
+            <div className="d-flex align-items-start">
+              <BsRobot size={24} className="text-primary me-3 mt-1" />
+              <div>
+                <h6 className="fw-bold mb-2">AI Analysis</h6>
+                <p className="mb-2">{recommendationAnalysis.reasoning}</p>
+                <div className="d-flex gap-3 small text-muted">
+                  <span><strong>Room:</strong> {recommendationAnalysis.detectedRoom}</span>
+                  <span><strong>Status:</strong> {recommendationAnalysis.completionLevel}</span>
+                </div>
+              </div>
+            </div>
+          </Alert>
+        )}
+
+        {/* Recommendations Grid */}
+        <Row className="g-4">
+          {recommendations.map((item) => (
+            <Col md={6} key={item._id}>
+              <Card className="h-100 border-0 shadow-sm recommendation-card">
+                <div className="position-relative">
+                  <img
+                    src={item.imageUrl?.[0] || "/placeholder.svg?height=200&width=300"}
+                    alt={item.name}
+                    className="card-img-top"
+                    style={{ height: "180px", objectFit: "cover" }}
+                  />
+                  {item.sales > 50 && (
+                    <Badge bg="success" className="position-absolute top-0 end-0 m-2">
+                      Popular
+                    </Badge>
+                  )}
+                </div>
+                <Card.Body className="d-flex flex-column">
+                  <h6 className="card-title fw-bold">{item.name}</h6>
+                  <p className="card-text text-muted small flex-grow-1">
+                    {item.description?.substring(0, 80)}...
+                  </p>
+
+                  <div className="mt-auto">
+                    <div className="d-flex justify-content-between align-items-center mb-3">
+                      <div>
+                        <span className="fw-bold text-primary fs-5">₱{item.price?.toLocaleString()}</span>
+                        {item.category && (
+                          <div className="small text-muted">{item.category.name}</div>
+                        )}
+                      </div>
+                      {item.sales && (
+                        <small className="text-muted">
+                          <BsStarFill className="text-warning me-1" />
+                          {item.sales} sold
+                        </small>
+                      )}
+                    </div>
+
+                    <div className="d-grid gap-2">
+                      <Button
+                        variant="primary"
+                        onClick={() => addRecommendedItemToCheckout(item)}
+                        className="d-flex align-items-center justify-content-center"
+                      >
+                        <BsPlus className="me-1" />
+                        Add to Checkout
+                      </Button>
+                      <Button
+                        variant="outline-secondary"
+                        size="sm"
+                        onClick={() => navigate(`/item/${item._id}`)}
+                        className="d-flex align-items-center justify-content-center"
+                      >
+                        <BsEye className="me-1" />
+                        View Details
+                      </Button>
+                    </div>
+                  </div>
+                </Card.Body>
+              </Card>
+            </Col>
+          ))}
+        </Row>
+      </div>
+    )
+  }
+
   return (
     <>
       {/* Navigation Bar */}
@@ -608,10 +832,22 @@ const CheckoutPage = () => {
             <h2 className="fw-bold mb-1">Secure Checkout</h2>
             <p className="text-muted mb-0">Complete your order safely and securely</p>
           </div>
-          <Badge bg="primary" className="px-3 py-2">
-            <BsShield className="me-1" />
-            SSL Secured
-          </Badge>
+          <div className="d-flex gap-2">
+            {selectedItems.length > 0 && (
+              <Button
+                variant="outline-success"
+                onClick={openRecommendationModal}
+                className="d-flex align-items-center"
+              >
+                <BsLightbulb className="me-2" />
+                Get AI Recommendations
+              </Button>
+            )}
+            <Badge bg="primary" className="px-3 py-2">
+              <BsShield className="me-1" />
+              SSL Secured
+            </Badge>
+          </div>
         </div>
 
         {/* Progress Bar */}
@@ -1402,6 +1638,65 @@ const CheckoutPage = () => {
             <BsCheck className="me-1" />
             Save Address
           </Button>
+        </Modal.Footer>
+      </Modal>
+
+      {/* AI Recommendation Modal */}
+      <Modal
+        show={showRecommendationModal}
+        onHide={() => setShowRecommendationModal(false)}
+        size="xl"
+        centered
+      >
+        <Modal.Header closeButton className="border-0 bg-gradient" style={{ background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)" }}>
+          <Modal.Title className="fw-bold text-white d-flex align-items-center">
+            <BsLightbulb className="me-2" />
+            AI-Powered Recommendations
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body className="p-4">
+          <div className="mb-3">
+            <p className="text-muted d-flex align-items-center">
+              <BsRobot className="me-2 text-primary" />
+              Our AI has analyzed your cart and found items that perfectly complement your selection
+            </p>
+
+            {selectedItems.length > 0 && (
+              <div className="bg-light p-3 rounded mb-3">
+                <h6 className="fw-semibold mb-2">Your Cart Items:</h6>
+                <div className="d-flex flex-wrap gap-2">
+                  {selectedItems.map((entry, index) => (
+                    <Badge key={index} bg="secondary" className="px-3 py-2">
+                      {entry.item.name} (×{entry.quantity})
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Recommendations Content */}
+          {renderRecommendations()}
+        </Modal.Body>
+        <Modal.Footer className="border-0">
+          <Button
+            variant="outline-secondary"
+            onClick={() => setShowRecommendationModal(false)}
+          >
+            Close
+          </Button>
+          {recommendations.length > 0 && (
+            <Button
+              variant="primary"
+              onClick={() => {
+                setShowRecommendationModal(false)
+                // Scroll to order summary to see updated totals
+                document.querySelector('.sticky-top')?.scrollIntoView({ behavior: 'smooth' })
+              }}
+            >
+              Continue Checkout
+            </Button>
+          )}
         </Modal.Footer>
       </Modal>
     </>

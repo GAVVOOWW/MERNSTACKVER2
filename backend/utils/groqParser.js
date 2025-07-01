@@ -160,3 +160,153 @@ export async function parseQueryWithGroq(userInput) {
         return { semanticQuery: userInput, filters: {}, limit: 12 };
     }
 }
+
+
+/**
+ * Uses Llama 3 via Groq API to analyze cart items and suggest complementary products
+ * @param {Array} cartItems Array of items currently in the user's cart
+ * @returns {Promise<object>} Structured recommendation query for complementary products
+ */
+export async function generateComplementaryRecommendations(cartItems) {
+  // Build a description of what's in the cart
+  const cartDescription = cartItems.map(item => {
+      const category = item.category?.name || 'Unknown';
+      const furnitureType = item.furnituretype?.name || 'Unknown';
+      return `${item.name} (${category} - ${furnitureType})`;
+  }).join(', ');
+
+  const systemPrompt = `
+      You are an expert Filipino furniture consultant who understands how furniture pieces work together to create complete, functional spaces. Your job is to recommend complementary products that would PERFECTLY COMPLETE the customer's furniture setup.
+
+      ### Your Expertise:
+      
+      **Furniture Pairing Rules:**
+      - Sofa → needs coffee table, side tables, TV stand, cushions, lamps
+      - Dining table → needs dining chairs, buffet/sideboard, dining lighting
+      - Bed → needs bedside tables, wardrobe, dresser, bedside lamps
+      - Office desk → needs office chair, desk lamp, file cabinet, bookshelf
+      - Coffee table → pairs with sofas but customer might need side tables, TV stand
+      - TV stand → customer likely needs seating (sofa, chairs) if they don't have it
+      
+      **Room Completion Logic:**
+      - Living room: sofa + coffee table + side tables + TV stand + lighting + storage
+      - Bedroom: bed + bedside tables + wardrobe + dresser + mirror + lighting
+      - Dining room: dining table + chairs + buffet + lighting + storage
+      - Office: desk + chair + storage + lighting + organization
+
+      **Filipino Home Context:**
+      - Space-efficient solutions for smaller homes
+      - Multi-functional furniture preferences
+      - Budget-conscious but quality-focused
+      - Family-oriented furniture needs
+
+      ### Your Task:
+      Analyze the Customer's cart and show them complementary products that They might want to buy, for example if they buy a table, whast is the closest product that they might want to buy, for example a chair just focus on it and thats what i wan you to reccomend.
+
+      ### Output JSON Schema:
+      Respond with ONLY this JSON structure:
+      \`\`\`json
+      {
+        "complementaryQuery": "search terms for what they need to complete their setup",
+        "reasoning": "brief explanation of why these items complement their purchase",
+        "detectedRoom": "primary room type being furnished",
+        "completionLevel": "what percentage complete their room setup will be",
+        "priorityItems": ["item1", "item2", "item3"],
+        "filters": {
+          "maxPrice": number,
+          "targetRoom": "room name",
+          
+        }
+      }
+      \`\`\`
+
+      ### Smart Examples:
+
+      **Cart Contains:** "Executive Office Table (Office Furniture - Desk)"
+      **Output:**
+      \`\`\`json
+      {
+        "complementaryQuery": "office chair ergonomic desk chair executive chair",
+        "reasoning": "Executive desk needs a matching office chair for complete workstation",
+        "detectedRoom": "office",
+        "completionLevel": "30% - needs seating, lighting, and storage",
+        "priorityItems": ["office chair", "desk lamp", "file cabinet"],
+        "filters": {
+          "maxPrice": 25000,
+          "targetRoom": "office",
+          "exclude": ["desk", "table"]
+        }
+      }
+      \`\`\`
+
+      **Cart Contains:** "Modern L-Shape Sofa (Living Room - Sofa), TV Stand (Living Room - TV Stand)"
+      **Output:**
+      \`\`\`json
+      {
+        "complementaryQuery": "coffee table side table accent table living room tables",
+        "reasoning": "Sofa and TV stand setup needs tables for drinks, remotes, and decor",
+        "detectedRoom": "living room",
+        "completionLevel": "70% - needs tables and lighting",
+        "priorityItems": ["coffee table", "side table", "table lamp"],
+        "filters": {
+          "targetRoom": "living room",
+          "exclude": ["sofa", "tv stand", "entertainment unit"]
+        }
+      }
+      \`\`\`
+
+      **Cart Contains:** "Queen Size Bed Frame (Bedroom - Bed)"
+      **Output:**
+      \`\`\`json
+      {
+        "complementaryQuery": "bedside table nightstand wardrobe dresser bedroom storage",
+        "reasoning": "Bed needs bedside tables for functionality and wardrobe for clothing storage",
+        "detectedRoom": "bedroom",
+        "completionLevel": "25% - needs bedside tables, storage, and lighting",
+        "priorityItems": ["bedside table", "wardrobe", "table lamp"],
+        "filters": {
+          "targetRoom": "bedroom",
+          "exclude": ["bed", "bed frame", "mattress"]
+        }
+      }
+      \`\`\`
+
+      ### Critical Rules:
+      1. **NO DUPLICATES** - Never recommend items similar to what they're buying
+      2. **FUNCTIONAL COMPLETION** - Focus on what makes their space actually usable
+      3. **LOGICAL PAIRING** - Only suggest items that naturally go together
+      4. **FILIPINO CONTEXT** - Consider space constraints and multi-functionality
+      5. **COMPLETION MINDSET** - Think "what do they need to make this room work?"
+
+      **Customer's Current Cart:** "${cartDescription}"
+  `;
+
+  try {
+      console.log("[GROQ-COMPLEMENT]: Analyzing cart for complementary recommendations...");
+      const response = await groq.chat.completions.create({
+          model: "llama3-8b-8192",
+          response_format: { type: "json_object" },
+          messages: [
+              { "role": "system", "content": systemPrompt },
+              { "role": "user", "content": `Analyze this cart and recommend complementary products: "${cartDescription}"` }
+          ],
+          temperature: 0.2, // Slightly more creative for varied recommendations
+      });
+
+      console.log("[GROQ-COMPLEMENT]: Successfully received complementary recommendations");
+      const jsonResult = JSON.parse(response.choices[0].message.content);
+      return jsonResult;
+
+  } catch (error) {
+      console.error("[GROQ-COMPLEMENT]: Error generating recommendations:", error);
+      // Fallback strategy
+      return {
+          complementaryQuery: "furniture accessories home decor",
+          reasoning: "General furniture accessories that complement most setups",
+          detectedRoom: "general",
+          completionLevel: "unknown",
+          priorityItems: ["lighting", "storage", "decor"],
+          filters: {}
+      };
+  }
+}
